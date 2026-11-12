@@ -1,17 +1,17 @@
-from sqlalchemy import Integer, String, Column, create_engine,ForeignKey, DateTime
-from sqlalchemy.orm import Session, declarative_base;
-from datetime import date, datetime;
-from fastapi import HTTPException;
+from sqlalchemy import Integer, String, Column, DateTime, ForeignKey, create_engine
+from sqlalchemy.orm import Session, declarative_base
+from datetime import datetime
 
-
-DB_PATH = "study_room.db"
-
+DB_PATH = "warehouse.db"
 engine = create_engine(f"sqlite:///{DB_PATH}")
 Base = declarative_base()
 
+USERNAME = "Sammie"
+PASSWORD = "123456"
+
 class packages(Base):
-    __tablename__="packages"
-    id = Column(Integer, primary_key=True)
+    __tablename__ = "packages"
+    package_id = Column(Integer, primary_key=True)
     name = Column(String)
     destination = Column(String)
     weight = Column(Integer)
@@ -19,8 +19,9 @@ class packages(Base):
     status = Column(String)
     dispatchBatchID = Column(Integer, ForeignKey("DispatchBatch.id"), nullable=True)
 
+
 class DispatchBatch(Base):
-    __tablename__="DispatchBatch"
+    __tablename__ = "DispatchBatch"
     id = Column(Integer, primary_key=True)
     destination = Column(String)
     vehicle_number = Column(Integer)
@@ -28,201 +29,183 @@ class DispatchBatch(Base):
     dispatch_date = Column(DateTime)
     created_at = Column(String)
 
+
 Base.metadata.create_all(engine)
 
-# E1
-def register_package(id, name, destination, weight, arrival_date, status):
-    session = Session(engine)
-    
-    if session.get(packages, id) is not None:
-        session.close()
-        raise HTTPException(status_code=409, detail="Package already exists")
-    
-    new_package = packages(
-        id=id,
-        name=name,      
-        destination=destination,
-        weight=weight,
-        arrival_date=arrival_date,
-        status=status, 
-    )
-    session.add(new_package)
-    session.commit()
-    session.close()
-    return {"message": "Package registered successfully"}
-
-# E2
-def get_package_by_id(id):
-    session = Session(engine)
-    
-    # Fixed: Safely handle ID conversion to prevent AttributeError
-    package_id = int(id)
-    if package_id.strip().isdigit() == False :
-        session.close()
-        raise HTTPException(status_code=400, detail="Package ID must be a number")
-        
-    package = session.get(packages, package_id)
-    
-    if not package:
-        session.close()
-        raise HTTPException(status_code=404, detail="Package not found")
-        
-    response = {
-        "id": package.id,
+def convert_dict(package):
+    return {
+        "package_id": package.package_id,
         "name": package.name,
         "destination": package.destination,
         "weight": package.weight,
         "arrival_date": package.arrival_date,
-        "status": package.status
+        "status": package.status,
     }
-    session.close()
-    return response
 
-# E3
-def update_package_details(id, name=None, destination=None, weight=None):
+def convert_batch_dict(batch):
+    return {
+        "id": batch.id,
+        "destination": batch.destination,
+        "vehicle_number": batch.vehicle_number,
+        "dispatch_status": batch.dispatch_status,
+        "dispatch_date": batch.dispatch_date,
+        "created_at": batch.created_at,
+    }
+
+
+# E1 registers a new package
+def register_package(name, destination, weight):
     session = Session(engine)
-    package = session.get(packages, id)
-    
-    if not package:
+    package = packages(
+        name=name,
+        destination=destination,
+        weight=weight,
+        arrival_date=datetime.now(),
+        status="Registered"
+    )
+    session.add(package)
+    session.commit()
+    data = convert_dict(package)
+    session.close()
+    return data
+
+
+# E2 gets one package based on id
+def get_package_by_id(package_id):
+    session = Session(engine)
+    package = session.get(packages, package_id)
+    if package is None:
         session.close()
-        raise HTTPException(status_code=404, detail="Package not found")
-    
+        return None
+    data = convert_dict(package)
+    session.close()
+    return data
+
+
+# E3 updates the details of a package
+def update_package_details(package_id, name=None, destination=None, weight=None):
+    session = Session(engine)
+    package = session.get(packages, package_id)
+    if package is None:
+        session.close()
+        return None
+
     if name is not None:
         package.name = name
     if destination is not None:
         package.destination = destination
     if weight is not None:
         package.weight = weight
-              
-    session.commit()
-    session.close()
-    return {"message": "Package updated successfully"}
 
-# E4
-def delete_package(id):
-    session = Session(engine)
-    package = session.get(packages, id)
-    
-    if not package:
-        session.close()
-        raise HTTPException(status_code=404, detail="Package not found")
-    
-    if package.status == "Dispatched":
-        session.close()
-        raise HTTPException(status_code=400, detail="Cannot delete a package that has already been dispatched")
-    
-    # Fixed: Correct SQLAlchemy delete syntax
-    session.delete(package)
     session.commit()
+    data = convert_dict(package)
+    session.close()
+    return data
+
+
+# E4 removes a package
+def delete_package(package_id):
+    session = Session(engine)
+    package = session.get(packages, package_id)
+    if package is not None:
+        session.delete(package)
+        session.commit()
     session.close()
     return {"message": "Package deleted successfully"}
 
-# E5
+
+# E5 searches packages by destination, status or arrival date
 def search_package(destination=None, status=None, arrival_date=None):
     session = Session(engine)
-    query = session.query(packages)
+    result = []
+    for package in session.query(packages).all():
+        result.append(convert_dict(package))
+    session.close()
 
     if destination is not None:
-        query = query.filter(packages.destination == destination)
+        by_destination = []
+        for item in result:
+            if item["destination"] == destination:
+                by_destination.append(item)
+        result = by_destination
+
     if status is not None:
-        query = query.filter(packages.status == status)
+        by_status = []
+        for item in result:
+            if item["status"] == status:
+                by_status.append(item)
+        result = by_status
+
     if arrival_date is not None:
-        query = query.filter(packages.arrival_date == arrival_date)
+        by_date = []
+        for item in result:
+            if str(item["arrival_date"])[:10] == arrival_date:
+                by_date.append(item)
+        result = by_date
 
-    package_list = query.all()
+    return result
 
-    if not package_list:
-        session.close()
-        raise HTTPException(status_code=404, detail="Package not found")
 
-    response = []
-    for package in package_list:
-        response.append({
-            "id": package.id,
-            "name": package.name,
-            "destination": package.destination,
-            "weight": package.weight,
-            "arrival_date": package.arrival_date,
-            "status": package.status,
-        })
-
-    session.close()
-    return response
-
-# E6
+# E6 views dispatch batches by destination, vehicle number or status
 def view_dispatchBatches(destination=None, vehicle_number=None, dispatch_status=None):
     session = Session(engine)
-    query = session.query(DispatchBatch)
+    result = []
+    for batch in session.query(DispatchBatch).all():
+        result.append(convert_batch_dict(batch))
+    session.close()
 
     if destination is not None:
-        query = query.filter(DispatchBatch.destination == destination)
+        by_destination = []
+        for item in result:
+            if item["destination"] == destination:
+                by_destination.append(item)
+        result = by_destination
+
     if vehicle_number is not None:
-        query = query.filter(DispatchBatch.vehicle_number == vehicle_number)
+        by_vehicle = []
+        for item in result:
+            if item["vehicle_number"] == vehicle_number:
+                by_vehicle.append(item)
+        result = by_vehicle
+
     if dispatch_status is not None:
-        query = query.filter(DispatchBatch.dispatch_status == dispatch_status)
+        by_status = []
+        for item in result:
+            if item["dispatch_status"] == dispatch_status:
+                by_status.append(item)
+        result = by_status
 
-    dispatch_batches_list = query.all()
-
-    if not dispatch_batches_list:
-        session.close()
-        raise HTTPException(status_code=404, detail="DispatchBatch not found")
-
-    response = []
-    for dispatch_batch in dispatch_batches_list:
-        response.append({
-            "id": dispatch_batch.id,
-            "destination": dispatch_batch.destination,
-            "vehicle_number": dispatch_batch.vehicle_number,
-            "dispatch_status": dispatch_batch.dispatch_status,
-            "dispatch_date": dispatch_batch.dispatch_date,
-            "created_at": dispatch_batch.created_at,
-        })
-
-    session.close()
-    return response
+    return result
 
 
-# E7
+# E7 gets every dispatch batch
 def get_all_dispatchBatches():
     session = Session(engine)
-    query = session.query(DispatchBatch)
-
-    dispatch_batches_list = query.all()
-    response = []
-    for dispatch_batch in dispatch_batches_list:
-        response.append({
-            "id": dispatch_batch.id,
-            "destination": dispatch_batch.destination,
-            "vehicle_number": dispatch_batch.vehicle_number,
-            "dispatch_status": dispatch_batch.dispatch_status,
-            "dispatch_date": dispatch_batch.dispatch_date,
-            "created_at": dispatch_batch.created_at,
-        })
+    result = []
+    for batch in session.query(DispatchBatch).all():
+        result.append(convert_batch_dict(batch))
     session.close()
-    return response
+    return result
 
 
-# E8
-def create_dispatchBatches(id, destination, vehicle_number, dispatch_status="Pending", dispatch_date=None, created_at=None):
+# E8 creates a new dispatch batch
+def create_dispatchBatches(destination, vehicle_number):
     session = Session(engine)
-
-    batch_id = int(id)
-
-    if session.get(DispatchBatch, batch_id) is not None:
-        session.close()
-        raise HTTPException(status_code=409, detail="DispatchBatch already exists")
-
-    new_dispatch_batch = DispatchBatch(
-        id=batch_id,
+    batch = DispatchBatch(
         destination=destination,
         vehicle_number=vehicle_number,
-        dispatch_status=dispatch_status or "Pending",
-        dispatch_date=dispatch_date,
-        created_at=created_at or datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        dispatch_status="Pending",
+        created_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     )
-
-    session.add(new_dispatch_batch)
+    session.add(batch)
     session.commit()
+    data = convert_batch_dict(batch)
     session.close()
+    return data
 
-    return {"message": "Dispatch successfully"}
+
+# verifying login 
+def verify_login(username, password):
+    if username == USERNAME and password == PASSWORD:
+        return True
+    return False
