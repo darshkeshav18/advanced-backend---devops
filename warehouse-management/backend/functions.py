@@ -1,6 +1,7 @@
 from sqlalchemy import Integer, String, Column, DateTime, ForeignKey, create_engine
 from sqlalchemy.orm import Session, declarative_base
-from datetime import datetime
+from datetime import datetime, timedelta
+import jwt
 
 DB_PATH = "warehouse.db"
 engine = create_engine(f"sqlite:///{DB_PATH}")
@@ -8,6 +9,9 @@ Base = declarative_base()
 
 USERNAME = "darsh"
 PASSWORD = "123456"
+ACCESS_TOKEN_EXPIRE=15
+SECRET_KEY = "MEOW"
+ALGORITHM = "HS256"
 
 class packages(Base):
     __tablename__ = "packages"
@@ -207,5 +211,22 @@ def create_dispatchBatches(destination, vehicle_number):
 # verifying login 
 def verify_login(username, password):
     if username == USERNAME and password == PASSWORD:
-        return True
-    return False
+        token = create_token(username=username)
+        return token
+    return None
+
+def create_token(username):
+    payload = {
+        "username": username,
+        "exp": datetime.now() + timedelta(minutes=ACCESS_TOKEN_EXPIRE),
+    }
+    token = jwt.encode(payload=payload, key=SECRET_KEY, algorithm=ALGORITHM)
+    return token
+
+
+def verify_token(token):
+    try:
+        payload = jwt.decode(jwt=token, key=SECRET_KEY, algorithms=[ALGORITHM])
+        return payload["username"]
+    except:
+        return False

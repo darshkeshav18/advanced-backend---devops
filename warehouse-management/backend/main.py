@@ -80,5 +80,7 @@ def add_dispatch(destination=None, vehicle_number: int=None):
 # verify login 
 @app.post("/login")
 def login(username: str, password: str):
-    is_login = functions.verify_login(username=username, password=password)
-    return {"logged_in": is_login}
+    token = functions.verify_login(username=username, password=password)
+    if token is None:
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+    return {"token": token}
