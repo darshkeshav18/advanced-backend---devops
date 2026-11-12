@@ -6,7 +6,7 @@ DB_PATH = "warehouse.db"
 engine = create_engine(f"sqlite:///{DB_PATH}")
 Base = declarative_base()
 
-USERNAME = "Sammie"
+USERNAME = "darsh"
 PASSWORD = "123456"
 
 class packages(Base):
