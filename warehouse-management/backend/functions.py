@@ -1,7 +1,7 @@
 from sqlalchemy import Integer, String, Column, DateTime, ForeignKey, create_engine
 from sqlalchemy.orm import Session, declarative_base
-from datetime import datetime, timedelta
-import jwt
+from datetime import datetime, timedelta, timezone
+import jwt 
 
 DB_PATH = "warehouse.db"
 engine = create_engine(f"sqlite:///{DB_PATH}")
@@ -9,8 +9,9 @@ Base = declarative_base()
 
 USERNAME = "darsh"
 PASSWORD = "123456"
-ACCESS_TOKEN_EXPIRE=15
-SECRET_KEY = "MEOW"
+ACCESS_TOKEN_EXPIRY = 15 # expires after that many mins
+REFRESH_TOKEN_EXPIRY = 7 * 24 * 60 # expires after that many mins
+SECRET_KEY = "rats&cats"
 ALGORITHM = "HS256"
 
 class packages(Base):
@@ -211,22 +212,32 @@ def create_dispatchBatches(destination, vehicle_number):
 # verifying login 
 def verify_login(username, password):
     if username == USERNAME and password == PASSWORD:
-        token = create_token(username=username)
-        return token
+        access_token = create_token(username=username, token_type="access")
+        refresh_token = create_token(username=username, token_type="refresh")
+        return {"acess_token": access_token, "refresh_toke": refresh_token}
     return None
 
-def create_token(username):
+
+def create_token(username, token_type):
+    time = ACCESS_TOKEN_EXPIRY 
+    if token_type == "refresh":
+        time = REFRESH_TOKEN_EXPIRY
+    
     payload = {
         "username": username,
-        "exp": datetime.now() + timedelta(minutes=ACCESS_TOKEN_EXPIRE),
+        "token_type": token_type,
+        "exp": datetime.now(timezone.utc) + timedelta(minutes=time)
     }
     token = jwt.encode(payload=payload, key=SECRET_KEY, algorithm=ALGORITHM)
     return token
 
-
-def verify_token(token):
+# verifying token
+def verify_token(token, token_type):
     try:
-        payload = jwt.decode(jwt=token, key=SECRET_KEY, algorithms=[ALGORITHM])
-        return payload["username"]
+        payload = jwt.decode(jwt=token, key=SECRET_KEY, algorithms=ALGORITHM)
     except:
         return False
+    
+    if payload["token_type"] == token_type:
+        return payload["username"]
+    return False
