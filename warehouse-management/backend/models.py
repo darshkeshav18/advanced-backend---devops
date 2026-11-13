@@ -105,6 +105,8 @@ class TokenPair(BaseModel):
 
 # used in functions.py where we changed the verify token function
 class TokenPayload(BaseModel):
+    user_id: int
+    user_type: str
     username: str
     token_type: str
 
@@ -113,4 +115,11 @@ class TokenPayload(BaseModel):
     def valid_type(cls, value):
         if value not in ["access", "refresh"]:
             raise ValueError("Invalid token type")
+        return value
+
+    @field_validator("user_type")
+    @classmethod
+    def valid_user_type(cls, value):
+        if value not in ["admin", "Customer_guy", "delivery_guy"]:
+            raise ValueError("Invalid user type")
         return value

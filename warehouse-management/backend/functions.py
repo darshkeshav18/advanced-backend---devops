@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 import jwt 
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
+from models import TokenPayload
 
 ph = PasswordHasher()
 
@@ -15,7 +16,7 @@ USERNAME = "darsh"
 PASSWORD = "123456"
 ACCESS_TOKEN_EXPIRY = 15 # expires after that many mins
 REFRESH_TOKEN_EXPIRY = 7 * 24 * 60 # expires after that many mins
-SECRET_KEY = "rats&cats"
+SECRET_KEY = "football"
 ALGORITHM = "HS256"
 
 ADMIN_ID = 0              # in DB ids start at 1, so 0 can be the admin and never clash with a real user
@@ -272,6 +273,7 @@ def create_token(user_id, user_type, username, token_type):
 def verify_token(token, token_type="access"):
     try:
         payload = jwt.decode(jwt=token, key=SECRET_KEY, algorithms=ALGORITHM)
+        TokenPayload.model_validate(payload)
     except:
         return False
     

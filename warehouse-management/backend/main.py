@@ -139,7 +139,7 @@ def login(creds: LoginRequest):
 
 # refresh token
 @app.post(path="/refresh")
-def refresh(refresh_token = Header(None)):
+def refresh(refresh_token = Header(None)): 
     user = functions.verify_token(token=refresh_token, token_type="refresh")
     if not user:
         raise HTTPException(status_code=401, detail="Invalid or Expired refresh token")
