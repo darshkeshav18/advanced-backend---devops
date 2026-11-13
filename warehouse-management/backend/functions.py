@@ -1,11 +1,15 @@
-from sqlalchemy import Integer, String, Column, DateTime, ForeignKey, create_engine
+from sqlalchemy import Integer, String, Column, DateTime, ForeignKey, create_engine, false
 from sqlalchemy.orm import Session, declarative_base
 from datetime import datetime, timedelta, timezone
 import jwt 
+from argon2 import PasswordHasher
+from argon2.exceptions import VerifyMismatchError
+
+ph = PasswordHasher()
 
 DB_PATH = "warehouse.db"
 engine = create_engine(f"sqlite:///{DB_PATH}")
-Base = declarative_base()
+Base = declarative_base()  
 
 USERNAME = "darsh"
 PASSWORD = "123456"
@@ -14,6 +18,20 @@ REFRESH_TOKEN_EXPIRY = 7 * 24 * 60 # expires after that many mins
 SECRET_KEY = "rats&cats"
 ALGORITHM = "HS256"
 
+ADMIN_ID = 0              # in DB ids start at 1, so 0 can be the admin and never clash with a real user
+ADMIN_USERNAME = "admin"
+ADMIN_PASSWORD = "admin@123"
+SIGNUP_ROLES = ["Customer_guy", "delivery_guy"]   # roles allowed through signup, admin is never one of them
+
+class User(Base):
+    __tablename__ = "User"
+    user_id = Column(Integer, primary_key=True)
+    user_type = Column(String, default="user")
+    user_name = Column(String)
+    password = Column(String)
+    
+    
+    
 class packages(Base):
     __tablename__ = "packages"
     package_id = Column(Integer, primary_key=True)
@@ -144,7 +162,7 @@ def search_package(destination=None, status=None, arrival_date=None):
     if arrival_date is not None:
         by_date = []
         for item in result:
-            if str(item["arrival_date"])[:10] == arrival_date:
+               if item["arrival_date"].date() == arrival_date:
                 by_date.append(item)
         result = by_date
 
@@ -209,35 +227,74 @@ def create_dispatchBatches(destination, vehicle_number):
     return data
 
 
-# verifying login 
+# verifying login
 def verify_login(username, password):
-    if username == USERNAME and password == PASSWORD:
-        access_token = create_token(username=username, token_type="access")
-        refresh_token = create_token(username=username, token_type="refresh")
-        return {"acess_token": access_token, "refresh_toke": refresh_token}
-    return None
-
-
-def create_token(username, token_type):
+    if ADMIN_USERNAME == username and ADMIN_PASSWORD == password:
+        access_token = create_token(user_id=ADMIN_ID, username=username, user_type="admin", token_type="access")
+        refresh_token = create_token(user_id=ADMIN_ID, username=username, user_type="admin", token_type="refresh")
+        return {"access_token": access_token, "refresh_token": refresh_token}
+    session = Session(engine)
+    user = session.query(User).filter_by(user_name=username).first()
+    if user is None:
+        session.close()
+        return False
+    try:
+        ph.verify(user.password, password)
+    except VerifyMismatchError:
+        session.close()
+        return False
+    user_id = user.user_id
+    user_type = user.user_type
+    session.close()
+    if user_type not in SIGNUP_ROLES:   # a DB user can never be an admin
+        return False
+    access_token = create_token(user_id=user_id, username=username, user_type=user_type, token_type="access")
+    refresh_token = create_token(user_id=user_id, username=username, user_type=user_type, token_type="refresh")
+    return {"access_token": access_token, "refresh_token": refresh_token}
+        
+def create_token(user_id, user_type, username, token_type):
     time = ACCESS_TOKEN_EXPIRY 
     if token_type == "refresh":
         time = REFRESH_TOKEN_EXPIRY
     
     payload = {
+        "user_id": user_id,
+        "user_type": user_type,
         "username": username,
         "token_type": token_type,
+                
         "exp": datetime.now(timezone.utc) + timedelta(minutes=time)
     }
     token = jwt.encode(payload=payload, key=SECRET_KEY, algorithm=ALGORITHM)
     return token
 
 # verifying token
-def verify_token(token, token_type):
+def verify_token(token, token_type="access"):
     try:
         payload = jwt.decode(jwt=token, key=SECRET_KEY, algorithms=ALGORITHM)
     except:
         return False
     
     if payload["token_type"] == token_type:
-        return payload["username"]
+        return payload
     return False
+
+# user
+def register_user(user_name:str, password:str, user_type:str):
+    if user_name == ADMIN_USERNAME:
+        return False
+    if user_type not in SIGNUP_ROLES:   # blocks anyone signing up as admin
+        return False
+    session = Session(engine)
+    user_exists = session.query(User).filter_by(user_name=user_name).first()
+    if user_exists is not None:
+        session.close()   
+        return False
+    session.add(User(user_name=user_name, password=ph.hash(password), user_type=user_type))
+    session.commit()
+    session.close()
+    return True
+
+# checking user role
+def check_role(user, allowed_types):
+    return user["user_type"] in allowed_types
